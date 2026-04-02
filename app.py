@@ -177,13 +177,24 @@ if st.button("MagicQuill 실행 ✨", use_container_width=True):
 # --- 하단 리스트 레이아웃 ---
 st.subheader("📋 파싱 히스토리")
 for entry in st.session_state.history:
-    # 'type' 정보가 없으면 기본값으로 '지출'을 사용하도록 변경
-t_type = entry.get('type', '지출') 
-t_icon = {"입금":"💰", "수입":"➕", "출금":"📤", "지출":"💸"}.get(t_type, "📝")
-    title = f"[{entry['date']}] {t_icon} {entry['type']} | 💳 {entry['card']} | 🏪 {entry['store']} | {entry['amount']}원"
+    # 💡 여기서부터는 반드시 스페이스바 4칸(또는 Tab 1번)이 들어가야 합니다!
+    t_type = entry.get('type', '지출') 
+    t_icon = {"입금":"💰", "수입":"➕", "출금":"📤", "지출":"💸"}.get(t_type, "📝")
+    
+    # 나머지 데이터들도 안전하게 .get()으로 가져오도록 보강했습니다.
+    pid = entry.get('pattern_id', '-')
+    e_date = entry.get('date', '0000-00-00')
+    e_card = entry.get('card', '알 수 없음')
+    e_store = entry.get('store', '상호 미상')
+    e_amount = entry.get('amount', '0')
+    e_time = entry.get('time', '00:00:00')
+    e_raw = entry.get('raw', '내용 없음')
+
+    title = f"[{e_date}] {t_icon} {t_type} | 💳 {e_card} | 🏪 {e_store} | {e_amount}원"
+    
     with st.expander(title, expanded=True):
-        st.caption(f"시간: {entry['time']} | 패턴: #{entry.get('pattern_id', '-')}")
-        st.markdown(f"> {entry['raw']}")
+        st.caption(f"시간: {e_time} | 패턴: #{pid}")
+        st.markdown(f"> {e_raw}")
 
 st.divider()
 st.subheader("🔮 마법 잉크병 (로직 리스트)")
