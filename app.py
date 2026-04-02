@@ -175,7 +175,7 @@ if st.button("MagicQuill 실행 ✨", use_container_width=True):
             # AI 분석 및 JSON 방어 코드
             try:
                 genai.configure(api_key=api_key)
-                model = genai.GenerativeModel("gemini-2.5-flash")
+                model = genai.GenerativeModel("gemini-3.1-flash-lite")
                 prompt = f"""
                 가계부 파싱용 JSON만 출력해줘: 
                 1.card (결제수단/카드사/은행명)
