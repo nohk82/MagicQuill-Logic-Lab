@@ -67,6 +67,7 @@ def load_from_github(token, repo_name):
     except Exception as e:
         return False, str(e), None
 
+# --- 타이틀 ---
 st.title("🖋️ MagicQuill: Logic Stack v2.5")
 st.markdown("---")
 
@@ -106,7 +107,7 @@ with st.sidebar:
                     st.session_state.history = h_data
                     st.session_state.logic_db = l_data
                     st.success("데이터를 성공적으로 불러왔습니다!")
-                    st.rerun() # 화면 새로고침하여 데이터 표시
+                    st.rerun() 
                 else:
                     st.error(f"데이터가 없거나 권한이 없습니다: {h_data}")
 
@@ -115,7 +116,6 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# --- [중략: 메인 로직은 완벽히 동일] ---
 
 # --- 신규 로직 승인창 ---
 if st.session_state.temp_logic:
@@ -137,7 +137,7 @@ if st.session_state.temp_logic:
             st.session_state.temp_logic = None
             st.rerun()
 
-# --- 엔진 가동 ---
+# --- 엔진 가동 (텍스트 입력) ---
 input_text = st.text_input("📩 새로운 금융 알림 문구를 입력하세요", key="input_text")
 if st.button("MagicQuill 실행 ✨", use_container_width=True):
     if not api_key:
@@ -146,6 +146,7 @@ if st.button("MagicQuill 실행 ✨", use_container_width=True):
         now_date = datetime.now().strftime("%Y-%m-%d")
         now_time = datetime.now().strftime("%H:%M:%S")
         
+        # 기존 로직 매칭 시도
         matched_idx = -1
         for i, logic in enumerate(st.session_state.logic_db):
             if re.search(logic['regex'], input_text):
@@ -158,39 +159,88 @@ if st.button("MagicQuill 실행 ✨", use_container_width=True):
             groups = match.groups()
             amount_val = next((g for g in groups if any(c.isdigit() for c in g)), "금액확인")
             store_val = next((g for g in groups if not any(c.isdigit() for c in g)), matched_logic['store'])
-            new_entry = {"date": now_date, "time": now_time, "raw": input_text, "card": matched_logic['card'], "store": store_val, "amount": amount_val, "method": "✅ 기존 로직 매칭", "pattern_id": matched_idx, "color": "green"}
+            new_entry = {
+                "date": now_date, 
+                "time": now_time, 
+                "raw": input_text, 
+                "card": matched_logic['card'], 
+                "store": store_val, 
+                "amount": amount_val, 
+                "method": "✅ 기존 로직 매칭", 
+                "pattern_id": matched_idx, 
+                "color": "green"
+            }
             st.session_state.history.insert(0, new_entry)
         else:
+            # AI 분석 및 JSON 방어 코드
             try:
                 genai.configure(api_key=api_key)
                 model = genai.GenerativeModel("gemini-3-flash-preview")
-                prompt = f"가계부 파싱 JSON: 1.card 2.store 3.amount 4.regex. 원문: {input_text}"
+                prompt = f"""
+                가계부 파싱용 JSON만 출력해줘: 
+                1.card (결제수단/카드사/은행명)
+                2.store (상호명/사용처) 
+                3.amount (숫자금액) 
+                4.regex (사용처와 금액은 (.*)나 (\d+) 등으로 반드시 그룹화할 것). 
+                원문: {input_text}
+                """
                 response = model.generate_content(prompt)
-                res_json = json.loads(response.text.replace("```json", "").replace("```", "").strip())
-                new_entry = {"date": now_date, "time": now_time, "raw": input_text, "card": res_json.get('card', '알수없음'), "store": res_json.get('store', '알수없음'), "amount": res_json.get('amount', '0'), "method": "❓ 신규 로직 검토 중", "pattern_id": "NEW", "color": "orange"}
-                st.session_state.history.insert(0, new_entry)
-                st.session_state.temp_logic = {"regex": res_json['regex'], "card": res_json.get('card', '알수없음'), "store": res_json.get('store', '알수없음'), "amount": res_json.get('amount', '0')}
-                st.rerun()
+                raw_text = response.text
+                
+                # 정규식으로 {} 안의 JSON 알맹이만 안전하게 추출
+                json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                
+                if json_match:
+                    res_json = json.loads(json_match.group(0))
+                    
+                    new_entry = {
+                        "date": now_date, 
+                        "time": now_time, 
+                        "raw": input_text, 
+                        "card": res_json.get('card', '알수없음'), 
+                        "store": res_json.get('store', '알수없음'), 
+                        "amount": res_json.get('amount', '0'), 
+                        "method": "❓ 신규 로직 검토 중", 
+                        "pattern_id": "NEW", 
+                        "color": "orange"
+                    }
+                    st.session_state.history.insert(0, new_entry)
+                    st.session_state.temp_logic = {
+                        "regex": res_json.get('regex', ''), 
+                        "card": res_json.get('card', '알수없음'), 
+                        "store": res_json.get('store', '알수없음'), 
+                        "amount": res_json.get('amount', '0')
+                    }
+                    st.rerun()
+                else:
+                    st.error(f"분석 실패! AI가 JSON을 반환하지 않았습니다. \n[AI 원문]: {raw_text}")
+                    
             except Exception as e:
-                st.error(f"분석 실패: {e}")
+                st.error(f"AI 통신/분석 에러: {e}")
 
 # --- 하단 리스트 레이아웃 ---
 st.subheader("📋 파싱 히스토리")
-for entry in st.session_state.history:
-    pid = entry.get('pattern_id', '-')
-    title = f"[{entry['date']}] 💳 {entry['card']} | 🏪 {entry['store']} 💸 {entry['amount']}원 (Pattern #{pid})"
-    with st.expander(title, expanded=True):
-        st.caption(f"시간: {entry['time']} | 상태: :{entry['color']}[{entry['method']}]")
-        st.markdown(f"> {entry['raw']}")
+if not st.session_state.history:
+    st.info("아직 처리된 내역이 없습니다.")
+else:
+    for entry in st.session_state.history:
+        pid = entry.get('pattern_id', '-')
+        title = f"[{entry['date']}] 💳 {entry['card']} | 🏪 {entry['store']} 💸 {entry['amount']}원 (Pattern #{pid})"
+        with st.expander(title, expanded=True):
+            st.caption(f"시간: {entry['time']} | 상태: :{entry['color']}[{entry['method']}]")
+            st.markdown(f"> {entry['raw']}")
 
 st.divider()
 st.subheader("🔮 마법 잉크병 (로직 리스트)")
-for i, logic in enumerate(st.session_state.logic_db):
-    logic_idx = len(st.session_state.logic_db) - i
-    col_code, col_del = st.columns([0.85, 0.15])
-    with col_code:
-        st.code(f"#{logic_idx} | 💳 {logic['card']}\n{logic['regex']}", language="regex")
-    with col_del:
-        if st.button("🗑️", key=f"del_{logic_idx}"):
-            st.session_state.logic_db.pop(i)
-            st.rerun()
+if not st.session_state.logic_db:
+    st.write("아직 학습된 패턴이 없습니다.")
+else:
+    for i, logic in enumerate(st.session_state.logic_db):
+        logic_idx = len(st.session_state.logic_db) - i
+        col_code, col_del = st.columns([0.85, 0.15])
+        with col_code:
+            st.code(f"#{logic_idx} | 💳 {logic['card']} (기준 가맹점: {logic.get('store', '알수없음')})\n{logic['regex']}", language="regex")
+        with col_del:
+            if st.button("🗑️", key=f"del_{logic_idx}"):
+                st.session_state.logic_db.pop(i)
+                st.rerun()
