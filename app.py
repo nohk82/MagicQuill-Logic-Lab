@@ -24,9 +24,9 @@ def save_to_github(token, repo_name, history_data, logic_data):
         g = Github(token)
         repo = g.get_repo(repo_name)
         
-        # CSV 변환
+        # CSV 변환 (type 필드 추가됨)
         csv_buffer = io.StringIO()
-        writer = csv.DictWriter(csv_buffer, fieldnames=["date", "time", "card", "store", "amount", "method", "pattern_id", "raw", "color"])
+        writer = csv.DictWriter(csv_buffer, fieldnames=["date", "time", "card", "store", "amount", "type", "method", "pattern_id", "raw", "color"])
         writer.writeheader()
         writer.writerows(history_data)
         csv_content = csv_buffer.getvalue()
@@ -53,11 +53,9 @@ def load_from_github(token, repo_name):
         g = Github(token)
         repo = g.get_repo(repo_name)
         
-        # 로직 DB 불러오기
         logic_file = repo.get_contents("data/logic.json")
         logic_data = json.loads(logic_file.decoded_content.decode('utf-8'))
         
-        # 히스토리 불러오기
         history_file = repo.get_contents("data/history.csv")
         csv_content = history_file.decoded_content.decode('utf-8-sig', errors='ignore')
         reader = csv.DictReader(io.StringIO(csv_content))
@@ -68,22 +66,20 @@ def load_from_github(token, repo_name):
         return False, str(e), None
 
 # --- 타이틀 ---
-st.title("🖋️ MagicQuill: Logic Stack v2.5")
+st.title("🖋️ MagicQuill: Logic Stack v2.9")
+st.caption("AI 강제 JSON 모드 및 자산 기준 분류 시스템 탑재")
 st.markdown("---")
 
-# --- 사이드바: 설정 및 GitHub 동기화 ---
+# --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ Settings")
     api_key = st.text_input("Gemini API Key", type="password")
-    
     st.divider()
     st.subheader("☁️ GitHub Sync")
     gh_token = st.text_input("GitHub Token (PAT)", type="password")
     gh_repo = st.text_input("Repository", placeholder="username/repo-name")
     
     col_save, col_load = st.columns(2)
-    
-    # 1. 저장 버튼
     if col_save.button("🚀 저장(Push)", use_container_width=True):
         if not gh_token or not gh_repo:
             st.warning("토큰과 저장소 이름을 입력하세요.")
@@ -91,12 +87,10 @@ with st.sidebar:
             with st.spinner("저장 중..."):
                 success, msg = save_to_github(gh_token, gh_repo, st.session_state.history, st.session_state.logic_db)
                 if success:
-                    st.success("GitHub에 저장 완료!")
-                    st.balloons()
+                    st.success("GitHub에 저장 완료!"); st.balloons()
                 else:
                     st.error(f"실패: {msg}")
 
-    # 2. 불러오기 버튼
     if col_load.button("📥 로드(Pull)", use_container_width=True):
         if not gh_token or not gh_repo:
             st.warning("토큰과 저장소 이름을 입력하세요.")
@@ -106,24 +100,23 @@ with st.sidebar:
                 if success:
                     st.session_state.history = h_data
                     st.session_state.logic_db = l_data
-                    st.success("데이터를 성공적으로 불러왔습니다!")
-                    st.rerun() 
+                    st.success("데이터를 성공적으로 불러왔습니다!"); st.rerun() 
                 else:
                     st.error(f"데이터가 없거나 권한이 없습니다: {h_data}")
 
     st.divider()
     if st.button("🗑️ 화면 초기화 (Memory Clear)"):
-        st.session_state.clear()
-        st.rerun()
-
+        st.session_state.clear(); st.rerun()
 
 # --- 신규 로직 승인창 ---
 if st.session_state.temp_logic:
     with st.container(border=True):
         st.warning("✨ **새로운 패턴을 발견했습니다! 저장할까요?**")
         tl = st.session_state.temp_logic
-        st.write(f"**추출 결과:** 💳 {tl['card']} | 🏪 {tl['store']} | 💸 {tl['amount']}원")
+        st.info(f"💡 **AI 설명:** {tl.get('desc', '설명 없음')}")
+        st.write(f"**추출 결과:** [{tl.get('type', '지출')}] 💳 {tl['card']} | 🏪 {tl['store']} | 💸 {tl['amount']}원")
         st.code(tl['regex'], language="regex")
+        
         col_ok, col_no = st.columns(2)
         if col_ok.button("✅ 로직 저장 및 적용", use_container_width=True):
             st.session_state.logic_db.insert(0, st.session_state.temp_logic)
@@ -160,61 +153,64 @@ if st.button("MagicQuill 실행 ✨", use_container_width=True):
             amount_val = next((g for g in groups if any(c.isdigit() for c in g)), "금액확인")
             store_val = next((g for g in groups if not any(c.isdigit() for c in g)), matched_logic['store'])
             new_entry = {
-                "date": now_date, 
-                "time": now_time, 
-                "raw": input_text, 
-                "card": matched_logic['card'], 
-                "store": store_val, 
-                "amount": amount_val, 
-                "method": "✅ 기존 로직 매칭", 
-                "pattern_id": matched_idx, 
-                "color": "green"
+                "date": now_date, "time": now_time, "raw": input_text, 
+                "card": matched_logic['card'], "store": store_val, "amount": amount_val, 
+                "type": matched_logic.get('type', '지출'),
+                "method": "✅ 기존 로직 매칭", "pattern_id": matched_idx, "color": "green"
             }
             st.session_state.history.insert(0, new_entry)
         else:
-            # AI 분석 및 JSON 방어 코드
+            # 💡 AI 분석 (안정적인 2.5 Flash + 강제 JSON 모드)
             try:
                 genai.configure(api_key=api_key)
-                model = genai.GenerativeModel("gemini-3.1-flash-lite")
+                
+                # 모델 변경 및 JSON 모드 활성화
+                model = genai.GenerativeModel(
+                    "gemini-2.5-flash",
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                
                 prompt = f"""
-                가계부 파싱용 JSON만 출력해줘: 
-                1.card (결제수단/카드사/은행명)
-                2.store (상호명/사용처) 
-                3.amount (숫자금액) 
-                4.regex (사용처와 금액은 (.*)나 (\d+) 등으로 반드시 그룹화할 것. 
-                         ★중요★ 정규식은 절대 `.*`로 시작하지 말고, 원문에 있는 실제 결제수단 이름(예: KB스타뱅킹, 하나카드 등)으로 명확하게 시작하도록 고정할 것!). 
+                다음 금융 알림 문자를 분석해서, 정확히 아래 제공된 JSON 형식에 맞춰서 데이터만 출력해.
+                
+                [분류 기준]
+                - '입금': [은행 계좌]로 돈이 들어오는 모든 경우 (월급, 이자, 배당금, 타행이체 등)
+                - '수입': [계좌 외 자산]이 늘어나는 경우 (카드 취소/환불, 페이 충전 등)
+                - '출금': [은행 계좌]에서 돈이 나가는 경우 (이체, 현금 인출 등)
+                - '지출': [카드/페이] 등으로 일반적인 결제 및 소비를 하는 경우
+                
+                [출력 형식]
+                {{
+                  "card": "결제수단/카드사/은행명",
+                  "store": "상호명/사용처",
+                  "amount": "숫자만 (예: 10000)",
+                  "type": "입금, 출금, 지출, 수입 중 택 1",
+                  "regex": "^로 시작하고 도구명이 포함된 정규식 (절대 .*로 시작 금지)",
+                  "desc": "이 정규식에 대한 1문장 설명"
+                }}
+                
                 원문: {input_text}
                 """
+                
                 response = model.generate_content(prompt)
-                raw_text = response.text
                 
-                # 정규식으로 {} 안의 JSON 알맹이만 안전하게 추출
-                json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                # 💡 강제 JSON 모드 덕분에 복잡한 정규식 추출 불필요!
+                res_json = json.loads(response.text)
                 
-                if json_match:
-                    res_json = json.loads(json_match.group(0))
-                    
-                    new_entry = {
-                        "date": now_date, 
-                        "time": now_time, 
-                        "raw": input_text, 
-                        "card": res_json.get('card', '알수없음'), 
-                        "store": res_json.get('store', '알수없음'), 
-                        "amount": res_json.get('amount', '0'), 
-                        "method": "❓ 신규 로직 검토 중", 
-                        "pattern_id": "NEW", 
-                        "color": "orange"
-                    }
-                    st.session_state.history.insert(0, new_entry)
-                    st.session_state.temp_logic = {
-                        "regex": res_json.get('regex', ''), 
-                        "card": res_json.get('card', '알수없음'), 
-                        "store": res_json.get('store', '알수없음'), 
-                        "amount": res_json.get('amount', '0')
-                    }
-                    st.rerun()
-                else:
-                    st.error(f"분석 실패! AI가 JSON을 반환하지 않았습니다. \n[AI 원문]: {raw_text}")
+                new_entry = {
+                    "date": now_date, "time": now_time, "raw": input_text, 
+                    "card": res_json.get('card', '알수없음'), "store": res_json.get('store', '알수없음'), 
+                    "amount": res_json.get('amount', '0'), "type": res_json.get('type', '지출'),
+                    "method": "❓ 신규 로직 검토 중", "pattern_id": "NEW", "color": "orange"
+                }
+                st.session_state.history.insert(0, new_entry)
+                
+                st.session_state.temp_logic = {
+                    "regex": res_json.get('regex', ''), "card": res_json.get('card', '알수없음'), 
+                    "store": res_json.get('store', '알수없음'), "amount": res_json.get('amount', '0'),
+                    "type": res_json.get('type', '지출'), "desc": res_json.get('desc', '')
+                }
+                st.rerun()
                     
             except Exception as e:
                 st.error(f"AI 통신/분석 에러: {e}")
@@ -226,9 +222,12 @@ if not st.session_state.history:
 else:
     for entry in st.session_state.history:
         pid = entry.get('pattern_id', '-')
-        title = f"[{entry['date']}] 💳 {entry['card']} | 🏪 {entry['store']} 💸 {entry['amount']}원 (Pattern #{pid})"
+        t_type = entry.get('type', '지출')
+        t_icon = {"입금":"💰", "수입":"➕", "출금":"📤", "지출":"💸"}.get(t_type, "📝")
+        
+        title = f"[{entry['date']}] {t_icon} {t_type} | 💳 {entry['card']} | 🏪 {entry['store']} 💸 {entry['amount']}원"
         with st.expander(title, expanded=True):
-            st.caption(f"시간: {entry['time']} | 상태: :{entry['color']}[{entry['method']}]")
+            st.caption(f"시간: {entry['time']} | 패턴: #{pid} | 상태: :{entry['color']}[{entry['method']}]")
             st.markdown(f"> {entry['raw']}")
 
 st.divider()
@@ -240,7 +239,8 @@ else:
         logic_idx = len(st.session_state.logic_db) - i
         col_code, col_del = st.columns([0.85, 0.15])
         with col_code:
-            st.code(f"#{logic_idx} | 💳 {logic['card']} (기준 가맹점: {logic.get('store', '알수없음')})\n{logic['regex']}", language="regex")
+            st.markdown(f"**📝 {logic.get('type', '지출')} 로직:** {logic.get('desc', '설명 없음')}")
+            st.code(f"#{logic_idx} | 💳 {logic['card']}\n{logic['regex']}", language="regex")
         with col_del:
             if st.button("🗑️", key=f"del_{logic_idx}"):
                 st.session_state.logic_db.pop(i)
