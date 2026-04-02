@@ -181,7 +181,8 @@ if st.button("MagicQuill 실행 ✨", use_container_width=True):
                 1.card (결제수단/카드사/은행명)
                 2.store (상호명/사용처) 
                 3.amount (숫자금액) 
-                4.regex (사용처와 금액은 (.*)나 (\d+) 등으로 반드시 그룹화할 것). 
+                4.regex (사용처와 금액은 (.*)나 (\d+) 등으로 반드시 그룹화할 것. 
+                         ★중요★ 정규식은 절대 `.*`로 시작하지 말고, 원문에 있는 실제 결제수단 이름(예: KB스타뱅킹, 하나카드 등)으로 명확하게 시작하도록 고정할 것!). 
                 원문: {input_text}
                 """
                 response = model.generate_content(prompt)
