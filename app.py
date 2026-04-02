@@ -177,7 +177,9 @@ if st.button("MagicQuill 실행 ✨", use_container_width=True):
 # --- 하단 리스트 레이아웃 ---
 st.subheader("📋 파싱 히스토리")
 for entry in st.session_state.history:
-    t_icon = {"입금":"💰", "수입":"➕", "출금":"📤", "지출":"💸"}.get(entry['type'], "📝")
+    # 'type' 정보가 없으면 기본값으로 '지출'을 사용하도록 변경
+t_type = entry.get('type', '지출') 
+t_icon = {"입금":"💰", "수입":"➕", "출금":"📤", "지출":"💸"}.get(t_type, "📝")
     title = f"[{entry['date']}] {t_icon} {entry['type']} | 💳 {entry['card']} | 🏪 {entry['store']} | {entry['amount']}원"
     with st.expander(title, expanded=True):
         st.caption(f"시간: {entry['time']} | 패턴: #{entry.get('pattern_id', '-')}")
