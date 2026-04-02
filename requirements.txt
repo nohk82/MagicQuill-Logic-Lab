@@ -1,2 +1,2 @@
 streamlit
-google-generativeai>=1.51.0  # 최신 모델 지원을 위해 버전 명시 권장
+google-generativeai
